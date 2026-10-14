@@ -1,0 +1,8 @@
+{
+  "name": "Remix APEX Formula 1 - 3D Car \u0026 Telemetry Hub",
+  "description": "High-performance interactive 3D Formula 1 car showcase and APEX live telemetry dashboard featuring real-time orbit controls, PBR studio lighting, and race diagnostics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
