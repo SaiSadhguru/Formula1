@@ -11,6 +11,8 @@ import {
   Flame,
   ArrowUpRight,
 } from 'lucide-react';
+import { BakuRaceIntelligenceCard } from './BakuRaceIntelligenceCard.tsx';
+
 
 interface TechSpecsSectionProps {
   speedKmh: number;
@@ -42,7 +44,7 @@ export const TechSpecsSection: React.FC<TechSpecsSectionProps> = ({
   return (
     <div className="bg-[#07080a] text-gray-200 border-t border-white/10">
       {/* Section 1: Live Telemetry & Pit Wall Diagnostics (Simulated Demo Data) */}
-      <section id="telemetry-section" className="py-16 px-4 md:px-8 max-w-7xl mx-auto">
+      <section id="telemetry-section" className="py-16 px-4 md:px-8 max-w-7xl mx-auto scroll-mt-20">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
           <div>
             <div className="flex items-center gap-2 text-xs font-mono-tech text-[#66ff00] mb-2 uppercase tracking-widest">
@@ -232,122 +234,15 @@ export const TechSpecsSection: React.FC<TechSpecsSectionProps> = ({
             </div>
           </div>
         </div>
-      </section>
 
-      {/* Section 2: Interactive Pit Wall Race Strategy Suite (Simulated Demo) */}
-      <section id="strategy-section" className="py-16 px-4 md:px-8 max-w-7xl mx-auto border-t border-white/10">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
-          <div>
-            <div className="text-xs font-mono-tech text-[#66ff00] mb-2 uppercase tracking-widest flex items-center gap-2">
-              <Activity className="w-4 h-4" />
-              <span>APEX PIT WALL RACE STRATEGY</span>
-              <span className="bg-amber-500/20 text-amber-300 text-[10px] px-2 py-0.5 rounded border border-amber-500/30 font-semibold">
-                SIMULATED STRATEGY DEMO
-              </span>
-            </div>
-            <h2 className="font-chakra font-black text-3xl md:text-4xl text-white tracking-wide uppercase">
-              Pit Stop & Tire Strategy Planner
-            </h2>
-          </div>
-          <p className="text-xs font-mono-tech text-gray-400 max-w-md">
-            Simulated tire degradation models and optimal pit window windows for Circuit de Barcelona-Catalunya (66 Laps).
-          </p>
-        </div>
-
-        {/* Strategy Selection Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="bg-black/60 border border-[#66ff00]/40 rounded-2xl p-5 shadow-xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 bg-[#66ff00] text-black text-[10px] font-chakra font-black px-3 py-0.5 rounded-bl-lg uppercase">
-              PRIMARY 1-STOP
-            </div>
-            <div className="font-chakra font-bold text-lg text-white mb-2">Option A: Soft ➔ Hard</div>
-            <div className="flex items-center gap-2 font-mono-tech text-xs mb-4">
-              <span className="px-2 py-1 bg-rose-500/20 text-rose-300 rounded border border-rose-500/30 font-bold">
-                C4 SOFT (L1 - 22)
-              </span>
-              <span className="text-gray-500">➔</span>
-              <span className="px-2 py-1 bg-white/10 text-gray-200 rounded border border-white/20 font-bold">
-                C1 HARD (L23 - 66)
-              </span>
-            </div>
-            <div className="space-y-1.5 font-mono-tech text-xs text-gray-400">
-              <div className="flex justify-between">
-                <span>PIT WINDOW:</span>
-                <span className="text-white font-bold">LAP 20 - 24</span>
-              </div>
-              <div className="flex justify-between">
-                <span>PIT STOP LOSS:</span>
-                <span className="text-white font-bold">~22.4s (Pit Lane Delta)</span>
-              </div>
-              <div className="flex justify-between">
-                <span>PROJECTED FINISH DELTA:</span>
-                <span className="text-[#66ff00] font-bold">BASELINE OPTIMAL</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-black/60 border border-white/10 rounded-2xl p-5 shadow-xl">
-            <div className="font-chakra font-bold text-lg text-white mb-2">Option B: Aggressive 2-Stop</div>
-            <div className="flex items-center gap-1.5 font-mono-tech text-[11px] mb-4">
-              <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-300 rounded border border-rose-500/30 font-bold">
-                SOFT (16L)
-              </span>
-              <span className="text-gray-500">➔</span>
-              <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded border border-amber-500/30 font-bold">
-                MED (24L)
-              </span>
-              <span className="text-gray-500">➔</span>
-              <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-300 rounded border border-rose-500/30 font-bold">
-                SOFT (26L)
-              </span>
-            </div>
-            <div className="space-y-1.5 font-mono-tech text-xs text-gray-400">
-              <div className="flex justify-between">
-                <span>STOPS & LOSS:</span>
-                <span className="text-white font-bold">2 STOPS (+44.8s)</span>
-              </div>
-              <div className="flex justify-between">
-                <span>PACE ADVANTAGE:</span>
-                <span className="text-amber-400 font-bold">+0.82s / lap clean air</span>
-              </div>
-              <div className="flex justify-between">
-                <span>UNDERCUT THREAT:</span>
-                <span className="text-white font-bold">HIGH RISK / REWARD</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-black/60 border border-white/10 rounded-2xl p-5 shadow-xl">
-            <div className="font-chakra font-bold text-lg text-white mb-2">Option C: Safety Car Contingency</div>
-            <div className="flex items-center gap-2 font-mono-tech text-xs mb-4">
-              <span className="px-2 py-1 bg-amber-500/20 text-amber-300 rounded border border-amber-500/30 font-bold">
-                C3 MEDIUM (L1 - 28)
-              </span>
-              <span className="text-gray-500">➔</span>
-              <span className="px-2 py-1 bg-white/10 text-gray-200 rounded border border-white/20 font-bold">
-                C1 HARD (L29 - 66)
-              </span>
-            </div>
-            <div className="space-y-1.5 font-mono-tech text-xs text-gray-400">
-              <div className="flex justify-between">
-                <span>SC PIT LOSS:</span>
-                <span className="text-white font-bold">~11.8s (Virtual SC Delta)</span>
-              </div>
-              <div className="flex justify-between">
-                <span>DEGRADATION BUFFER:</span>
-                <span className="text-emerald-400 font-bold">+8 Laps Tire Margin</span>
-              </div>
-              <div className="flex justify-between">
-                <span>TRAFFIC REJOIN:</span>
-                <span className="text-white font-bold">P4 - P6 Estimated</span>
-              </div>
-            </div>
-          </div>
+        {/* Feature Card: BAKU RACE INTELLIGENCE */}
+        <div className="mt-6">
+          <BakuRaceIntelligenceCard />
         </div>
       </section>
 
       {/* Section 3: Technical Architecture & Systems Deep Dive */}
-      <section id="powertrain-section" className="py-16 px-4 md:px-8 max-w-7xl mx-auto border-t border-white/10">
+      <section id="powertrain-section" className="py-16 px-4 md:px-8 max-w-7xl mx-auto border-t border-white/10 scroll-mt-20">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-10">
           <div>
             <div className="text-xs font-mono-tech text-[#66ff00] mb-2 uppercase tracking-widest flex items-center gap-2">
@@ -502,7 +397,7 @@ export const TechSpecsSection: React.FC<TechSpecsSectionProps> = ({
           </div>
 
           {/* Quick Specs Benchmark Panel */}
-          <div id="specs-section" className="bg-black/60 border border-white/10 rounded-2xl p-6 flex flex-col justify-between">
+          <div id="specs-section" className="bg-black/60 border border-white/10 rounded-2xl p-6 flex flex-col justify-between scroll-mt-20">
             <div>
               <h4 className="font-chakra font-bold text-lg text-white mb-4 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-[#66ff00]" />

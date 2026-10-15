@@ -56,12 +56,12 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
   ];
 
   return (
-    <div className="pointer-events-none fixed bottom-4 left-1/2 -translate-x-1/2 z-20 w-[94vw] max-w-4xl transition-transform duration-300">
+    <div className="pointer-events-none absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 w-[96vw] max-w-4xl transition-transform duration-300">
       {/* Collapse / Expand Tab Toggle */}
       <div className="flex justify-center mb-1">
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="pointer-events-auto bg-black/85 hover:bg-black/95 text-gray-300 hover:text-white px-4 py-1 rounded-t-lg border-t border-x border-white/10 text-xs font-mono-tech flex items-center gap-1.5 shadow-xl transition-colors cursor-pointer"
+          className="pointer-events-auto bg-black/85 hover:bg-black/95 text-gray-300 hover:text-white px-3 sm:px-4 py-1 rounded-t-lg border-t border-x border-white/10 text-[10px] sm:text-xs font-mono-tech flex items-center gap-1.5 shadow-xl transition-colors cursor-pointer"
         >
           {isCollapsed ? (
             <>
@@ -79,72 +79,72 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
 
       {/* Main Dock Container */}
       {!isCollapsed && (
-        <div className="pointer-events-auto bg-black/90 backdrop-blur-xl border border-white/15 rounded-2xl p-3 md:p-4 shadow-[0_20px_50px_rgba(0,0,0,0.8)]">
+        <div className="pointer-events-auto bg-black/90 backdrop-blur-xl border border-white/15 rounded-2xl p-2.5 sm:p-3 md:p-4 shadow-[0_20px_50px_rgba(0,0,0,0.8)] max-h-[42vh] overflow-y-auto">
           {/* Top Row: Navigation Tabs & Toggles */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-white/10">
             {/* Category Tabs */}
-            <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/5">
+            <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/5 overflow-x-auto max-w-full">
               <button
                 onClick={() => setActiveTab('camera')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-chakra font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-chakra font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
                   activeTab === 'camera'
                     ? 'bg-[#66ff00] text-black shadow-[0_0_10px_rgba(102,255,0,0.4)]'
                     : 'text-gray-400 hover:text-white'
                 }`}
               >
-                <Camera className="w-3.5 h-3.5" />
+                <Camera className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
                 <span>Camera Views</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('livery')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-chakra font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-chakra font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
                   activeTab === 'livery'
                     ? 'bg-[#66ff00] text-black shadow-[0_0_10px_rgba(102,255,0,0.4)]'
                     : 'text-gray-400 hover:text-white'
                 }`}
               >
-                <Palette className="w-3.5 h-3.5" />
+                <Palette className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
                 <span>Liveries</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('inspect')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-chakra font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-chakra font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
                   activeTab === 'inspect'
                     ? 'bg-[#66ff00] text-black shadow-[0_0_10px_rgba(102,255,0,0.4)]'
                     : 'text-gray-400 hover:text-white'
                 }`}
               >
-                <Info className="w-3.5 h-3.5" />
+                <Info className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
                 <span>Aero Hotspots</span>
               </button>
             </div>
 
             {/* Quick Action Badges */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <button
                 onClick={onToggleDrs}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-mono-tech border transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-mono-tech border transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 ${
                   isDrsOpen
                     ? 'bg-[#66ff00]/20 text-[#66ff00] border-[#66ff00]/50'
                     : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
                 }`}
               >
                 <Wind className="w-3 h-3" />
-                <span>DRS: {isDrsOpen ? 'ACTIVE' : 'OFF'}</span>
+                <span>DRS: {isDrsOpen ? 'ON' : 'OFF'}</span>
               </button>
 
               <button
                 onClick={onToggleWireframe}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-mono-tech border transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-mono-tech border transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 ${
                   isWireframe
                     ? 'bg-purple-500/20 text-purple-400 border-purple-500/50'
                     : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
                 }`}
               >
                 <Boxes className="w-3 h-3" />
-                <span>CFD Mesh</span>
+                <span>CFD</span>
               </button>
 
               <button
@@ -152,11 +152,11 @@ export const BottomControlDock: React.FC<BottomControlDockProps> = ({
                   onSelectHotspot(null);
                   onSelectCameraPreset('hero');
                 }}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-mono-tech bg-white/5 text-gray-400 border border-white/10 hover:text-white hover:bg-white/10 transition-all cursor-pointer flex items-center gap-1.5"
+                className="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-mono-tech bg-white/5 text-gray-400 border border-white/10 hover:text-white hover:bg-white/10 transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5"
                 title="Reset Camera Framing"
               >
                 <RotateCcw className="w-3 h-3" />
-                <span className="hidden sm:inline">Reset</span>
+                <span>Reset</span>
               </button>
             </div>
           </div>

@@ -1,11 +1,15 @@
 @import "tailwindcss";
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+    color-scheme: dark;
+  }
   body {
-    background-color: #07080a;
-    color: #e5e7eb;
+    background-color: #08090b;
+    color: #e2e4e9;
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 }
 
@@ -17,30 +21,38 @@
   font-family: 'JetBrains Mono', monospace;
 }
 
-/* Custom scrollbars for technical feel */
+/* Custom workstation scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b0d12;
+  background: #0d0f12;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #232733;
-  border-radius: 3px;
+  background: #1f232b;
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #374151;
+  background: #2d3340;
 }
 
-/* Subtly animated carbon fiber grid background */
+/* Engineering dark carbon-fiber grid */
 .carbon-grid-bg {
-  background-color: #08090c;
+  background-color: #08090b;
   background-image: 
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 32px 32px;
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Engineering hairline borders */
+.border-subtle {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.border-subtle-red {
+  border-color: rgba(220, 38, 38, 0.35);
 }

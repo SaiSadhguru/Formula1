@@ -151,20 +151,28 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
   const controlsRef = useRef<OrbitControls | null>(null);
   const carModelRef = useRef<THREE.Group | null>(null);
   const originalMaterialsRef = useRef<Map<THREE.Mesh, THREE.Material | THREE.Material[]>>(new Map());
+  const [retryCount, setRetryCount] = useState<number>(0);
+  const disposed = useRef<boolean>(false);
 
-  // Balanced Front Three-Quarter Camera Angle:
-  // Car is approximately 25-30% larger, prominent, and fully visible without clipping by HUD or dock
-  const targetCamPosRef = useRef<THREE.Vector3>(new THREE.Vector3(2.85, 1.25, 2.70));
+  // Camera target animation refs
+  const targetCamPosRef = useRef<THREE.Vector3>(new THREE.Vector3(3.4, 1.35, 3.2));
   const targetLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0.38, 0.18));
   const isUserInteractingRef = useRef<boolean>(false);
+
+  // Model bounding box center and radius for dynamic framing
+  const modelBoundsRef = useRef<{ center: THREE.Vector3; radius: number; size: THREE.Vector3 } | null>(null);
 
   // Initialize Three.js scene
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const width = container.clientWidth;
-    const height = container.clientHeight;
+    // Reset error state on each mount or retry
+    setLoadError(null);
+    setIsLoading(true);
+
+    const width = container.clientWidth || window.innerWidth;
+    const height = container.clientHeight || window.innerHeight;
     const isMobile = width < 768;
 
     // 1. Scene
@@ -175,28 +183,129 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
     // Subtle atmospheric studio depth fog blending into background
     scene.fog = new THREE.FogExp2(0x07080a, 0.035);
 
-    // 2. Camera with automotive FOV (37 degrees)
-    const camera = new THREE.PerspectiveCamera(37, width / height, 0.1, 100);
-    const initialDistFactor = isMobile ? 1.28 : 1.0;
-    camera.position.set(2.85 * initialDistFactor, 1.25 * initialDistFactor, 2.70 * initialDistFactor);
+    // 2. Camera with balanced automotive FOV (36 degrees)
+    const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 100);
+    // Hero 3/4 framing: 
+    // Positioned to provide clear clearance for top telemetry HUD and bottom dock
+    const initialDistFactor = isMobile ? 1.35 : 1.05;
+    camera.position.set(3.4 * initialDistFactor, 1.35 * initialDistFactor, 3.2 * initialDistFactor);
     cameraRef.current = camera;
 
-    // 3. Renderer with ACESFilmicToneMapping & SRGBColorSpace
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      powerPreference: 'high-performance',
-      alpha: false,
-    });
+    // 3. Renderer with ACESFilmicToneMapping & SRGBColorSpace with safe single-context allocation
+    let renderer: THREE.WebGLRenderer | null = null;
+    let webglDiagnosticInfo = '';
+
+    // ── WebGL capability probe ─────────────────────────────────────────────────
+    // IMPORTANT: We test WebGL support on a *separate* throw-away canvas.
+    // We must NOT pass that canvas to THREE.WebGLRenderer, because browsers
+    // allow only ONE WebGL context per <canvas> element. Reusing a canvas
+    // that already has a context attached causes "Error creating WebGL context"
+    // (GL_RENDERER = Disabled / context exhausted).
+    const probeCanvas = document.createElement('canvas');
+    probeCanvas.width = 1;
+    probeCanvas.height = 1;
+    let webglAvailable = false;
+    try {
+      const probe = probeCanvas.getContext('webgl2') || probeCanvas.getContext('webgl');
+      if (probe) {
+        webglAvailable = true;
+        const debugInfo = (probe as WebGLRenderingContext).getExtension('WEBGL_debug_renderer_info');
+        const unmaskedRenderer = debugInfo
+          ? (probe as WebGLRenderingContext).getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+          : 'Standard WebGL';
+        console.info('F1Canvas: WebGL hardware capability confirmed:', unmaskedRenderer);
+        // Lose context on the probe immediately so we do not hold GPU resources
+        const loseCtx = (probe as WebGLRenderingContext).getExtension('WEBGL_lose_context');
+        if (loseCtx) loseCtx.loseContext();
+      }
+    } catch {
+      // probe failed — treat as unavailable
+    }
+
+    if (!webglAvailable) {
+      webglDiagnosticInfo =
+        'Browser or GPU driver reported that WebGL context creation failed. ' +
+        'In Chrome, check chrome://gpu — if "Hardware Accelerated" is disabled, ' +
+        'enable it at chrome://settings/system or launch Chrome without --disable-gpu flags.';
+      console.warn('F1Canvas: WebGL probe returned null. Diagnostic:', webglDiagnosticInfo);
+    }
+
+    // Create a fresh canvas for the renderer.
+    // Do NOT reuse probeCanvas — that canvas has already had its context
+    // allocated and browsers enforce a 1-context-per-canvas limit.
+    const rendererCanvas = document.createElement('canvas');
+
+    if (webglAvailable) {
+      // Only attempt renderer creation when the probe confirmed WebGL works.
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas: rendererCanvas,
+          antialias: !isMobile, // skip AA on mobile to save GPU budget
+          powerPreference: 'high-performance',
+          alpha: false,
+          failIfMajorPerformanceCaveat: false,
+        });
+        const gl = renderer.getContext();
+        if (!gl || gl.isContextLost()) {
+          throw new Error('Renderer context is null or lost immediately after creation');
+        }
+      } catch (rendererErr) {
+        console.error('F1Canvas: THREE.WebGLRenderer creation failed:', rendererErr);
+        renderer = null;
+      }
+    }
+
+    if (!renderer) {
+      setLoadError(
+        webglDiagnosticInfo ||
+          'Unable to initialize a WebGL rendering context. ' +
+          'This may be caused by hardware acceleration being disabled in Chrome ' +
+          '(chrome://settings/system → "Use graphics acceleration when available"), ' +
+          'a GPU process crash, or an exhausted context limit. ' +
+          'Telemetry, Pit Strategy, and all other features remain fully operational below.',
+      );
+      setIsLoading(false);
+      return;
+    }
+
     rendererRef.current = renderer;
+
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.22;
+    renderer.toneMappingExposure = 1.20;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap; // PCFShadowMap provides standard high-fidelity filtered shadows
 
-    container.innerHTML = '';
+    // Handle WebGL context lost & restored lifecycle gracefully
+    let isContextLost = false;
+    const canvasElement = renderer.domElement;
+
+    const handleContextLost = (event: Event) => {
+      event.preventDefault(); // Required by WebGL spec to allow context restore
+      console.error('F1Canvas: WebGL context lost. GPU resources exhausted. Pausing render loop.', {
+        contextLost: true,
+      });
+      isContextLost = true;
+      setLoadError('WebGL graphics context was temporarily lost. You can retry initialization.');
+    };
+
+    const handleContextRestored = () => {
+      console.info('F1Canvas: WebGL context restored. Rebuilding rendering state.');
+      isContextLost = false;
+      setLoadError(null);
+      // User must click Retry to reinitialize — do not auto-retry
+    };
+
+    canvasElement.addEventListener('webglcontextlost', handleContextLost, false);
+    canvasElement.addEventListener('webglcontextrestored', handleContextRestored, false);
+
+    // Remove any stale canvas from a previous renderer without wiping other React children
+    const staleCanvas = container.querySelector('canvas');
+    if (staleCanvas) {
+      container.removeChild(staleCanvas);
+    }
     container.appendChild(renderer.domElement);
 
     // 4. Studio Environment Reflection (RoomEnvironment PMREM generator)
@@ -208,7 +317,7 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
 
     // 5. Studio Lighting Rig
     // Key Light: High-precision directional spotlight casting soft shadows
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.6);
     keyLight.position.set(5.0, 7.0, 5.5);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 2048;
@@ -224,32 +333,32 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
     scene.add(keyLight);
 
     // Fill Light: Restrained cool ambient fill
-    const fillLight = new THREE.DirectionalLight(0x6b829e, 1.2);
+    const fillLight = new THREE.DirectionalLight(0x6b829e, 1.1);
     fillLight.position.set(-5.5, 3.5, -3.5);
     scene.add(fillLight);
 
     // Rim/Backlight: Warm edge light defining carbon aerodynamics
-    const rimLight = new THREE.DirectionalLight(0x88ee55, 1.5);
+    const rimLight = new THREE.DirectionalLight(0x88ee55, 1.3);
     rimLight.position.set(0, 3.5, -6.0);
     scene.add(rimLight);
 
     // Overhead Studio Softbox Light
-    const topLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    const topLight = new THREE.DirectionalLight(0xffffff, 0.9);
     topLight.position.set(0, 8.0, 0);
     scene.add(topLight);
 
     // Subtle ambient base
-    const ambientLight = new THREE.AmbientLight(0x111317, 0.7);
+    const ambientLight = new THREE.AmbientLight(0x111317, 0.65);
     scene.add(ambientLight);
 
     // 6. Premium Dark Graphite Studio Floor & Subtle Technical Grid
     // Dark graphite studio floor plane (restrained reflections, no bright glare)
-    const floorGeom = new THREE.PlaneGeometry(40, 40);
+    const floorGeom = new THREE.PlaneGeometry(50, 50);
     floorGeom.rotateX(-Math.PI / 2);
     const floorMat = new THREE.MeshStandardMaterial({
       color: 0x090a0d,
-      roughness: 0.86,
-      metalness: 0.15,
+      roughness: 0.88,
+      metalness: 0.12,
     });
     floorMat.polygonOffset = true;
     floorMat.polygonOffsetFactor = 1;
@@ -259,18 +368,18 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
     floorMesh.receiveShadow = true;
     scene.add(floorMesh);
 
-    // Subtle technical grid in dark muted graphite (no harsh bright grey lines)
-    const gridHelper = new THREE.GridHelper(28, 28, 0x181c26, 0x10131a);
+    // Subtle technical grid in dark muted graphite (reduced contrast, very subtle studio feel)
+    const gridHelper = new THREE.GridHelper(30, 30, 0x141720, 0x0c0e14);
     gridHelper.position.y = 0.0005;
     if (Array.isArray(gridHelper.material)) {
       gridHelper.material.forEach((m) => {
         m.transparent = true;
-        m.opacity = 0.20;
+        m.opacity = 0.12;
         m.depthWrite = false;
       });
     } else {
       gridHelper.material.transparent = true;
-      gridHelper.material.opacity = 0.20;
+      gridHelper.material.opacity = 0.12;
       gridHelper.material.depthWrite = false;
     }
     scene.add(gridHelper);
@@ -360,13 +469,25 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
       isUserInteractingRef.current = true;
     });
 
+    // Reset auto-pilot once the user finishes interacting
+    controls.addEventListener('end', () => {
+      isUserInteractingRef.current = false;
+    });
+
     // 9. Load Genuine 3D Formula 1 Race Car Model via GLTFLoader
     const loader = new GLTFLoader();
     const modelUrl = '/models/f1-car.glb';
 
+    // Guard against StrictMode double-mount: if effect has cleaned up before
+    // the async GLB load completes, discard the result silently.
+    disposed.current = false;
+
     loader.load(
       modelUrl,
       (gltf) => {
+        // Effect was cleaned up before the async load finished — discard silently
+        if (disposed.current) return;
+
         const car = gltf.scene;
         carModelRef.current = car;
 
@@ -398,10 +519,9 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             meshCount++;
-
-            if (mesh.geometry && mesh.geometry.attributes.position) {
-              totalVertices += mesh.geometry.attributes.position.count;
-            }
+            totalVertices += mesh.geometry.attributes.position
+              ? mesh.geometry.attributes.position.count
+              : 0;
 
             // Cache original materials
             if (mesh.material) {
@@ -439,14 +559,55 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
           }
         });
 
+        console.info('F1Canvas: GLB model loaded successfully', {
+          meshCount: meshCount,
+          totalVertices: totalVertices,
+        });
         scene.add(car);
         setIsLoading(false);
         setModelDetails(`Genuine F1 Model: ${meshCount} CAD groups • ${totalVertices.toLocaleString()} vertices`);
 
-        // Apply balanced front three-quarter framing targeting vehicle center
-        const distMult = isMobile ? 1.28 : 1.0;
-        targetCamPosRef.current.set(2.85 * distMult, 1.25 * distMult, 2.70 * distMult);
-        targetLookAtRef.current.set(0, 0.38, 0.18);
+        // Calculate model bounding box and sphere for precise camera framing
+        const boundingBox = new THREE.Box3().setFromObject(car);
+        const boundingSphere = new THREE.Sphere();
+        boundingBox.getBoundingSphere(boundingSphere);
+        const boxSize = boundingBox.getSize(new THREE.Vector3());
+
+        modelBoundsRef.current = {
+          center: boundingSphere.center.clone(),
+          radius: boundingSphere.radius,
+          size: boxSize.clone(),
+        };
+
+        // Frame the vehicle dynamically based on its bounding sphere
+        // For PerspectiveCamera with fov=36 deg, distance to fit sphere of radius R:
+        // dist = R / sin(fov / 2)
+        // Set framing distance and target offset so all four wheels and both wings remain clearly visible above the bottom control dock
+        const fovRad = (camera.fov * Math.PI) / 180;
+        const fitDistance = (boundingSphere.radius / Math.sin(fovRad / 2)) * 1.14; 
+        const aspectCorrection = width < height ? Math.max(1.0, (height / width) * 0.75) : 1.0;
+        const heroDist = fitDistance * (isMobile ? 1.30 : 1.05) * aspectCorrection;
+
+        // Balanced front three-quarter hero angle:
+        // Position at ~45° azimuth and ~23° elevation
+        const heroAzimuth = Math.PI * 0.25;
+        const heroElevation = Math.sin((23 * Math.PI) / 180);
+        const heroGroundDist = heroDist * Math.cos((23 * Math.PI) / 180);
+
+        // Raise target Y to center car vertically in the visible space above the bottom dock
+        const targetY = boundingSphere.center.y * 0.85 + 0.38;
+        targetLookAtRef.current.set(boundingSphere.center.x, targetY, boundingSphere.center.z);
+
+        targetCamPosRef.current.set(
+          heroGroundDist * Math.sin(heroAzimuth),
+          targetY + heroDist * heroElevation,
+          heroGroundDist * Math.cos(heroAzimuth)
+        );
+
+        // Update orbit controls limits to safe automotive inspection ranges
+        controls.minDistance = boundingSphere.radius * 0.65;
+        controls.maxDistance = boundingSphere.radius * 4.2;
+        controls.target.copy(targetLookAtRef.current);
       },
       (xhr) => {
         if (xhr.total > 0) {
@@ -463,13 +624,18 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
       }
     );
 
-    // 10. Render & Animation Loop with smooth exponential damp
+    // 10. Render & Animation Loop with modern THREE.Timer (replaces deprecated THREE.Clock)
     let animationFrameId: number;
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer();
 
-    const animate = () => {
+    const animate = (timestamp: number) => {
       animationFrameId = requestAnimationFrame(animate);
-      const delta = clock.getDelta();
+
+      // Halt rendering passes if WebGL context is lost
+      if (isContextLost) return;
+
+      timer.update(timestamp);
+      const delta = timer.getDelta();
 
       // Smooth camera interpolation towards target when not interacting manually
       if (!isUserInteractingRef.current) {
@@ -483,41 +649,99 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
       }
 
       controls.update();
-      renderer.render(scene, camera);
+      try {
+        renderer.render(scene, camera);
+      } catch (renderError) {
+        console.error('Three.js render cycle error:', renderError);
+      }
     };
 
-    animate();
+    animationFrameId = requestAnimationFrame(animate);
 
-    // Handle container resize
+    // Handle container resize safely with ResizeObserver & dimension guards
     const handleResize = () => {
       if (!container || !renderer || !camera) return;
-      const w = container.clientWidth;
-      const h = container.clientHeight;
+      const w = Math.max(container.clientWidth, 10);
+      const h = Math.max(container.clientHeight, 10);
       const mobileCheck = w < 768;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
+      renderer.setSize(w, h, false);
 
       if (!isUserInteractingRef.current && !activeHotspot) {
-        const dMult = mobileCheck ? 1.28 : 1.0;
-        if (cameraPreset === 'hero') {
-          targetCamPosRef.current.set(2.85 * dMult, 1.25 * dMult, 2.70 * dMult);
+        const bounds = modelBoundsRef.current;
+        if (bounds) {
+          const fovRad = (camera.fov * Math.PI) / 180;
+          const fitDistance = (bounds.radius / Math.sin(fovRad / 2)) * 1.14;
+          const aspectCorrection = w < h ? Math.max(1.0, (h / w) * 0.75) : 1.0;
+          const heroDist = fitDistance * (mobileCheck ? 1.30 : 1.05) * aspectCorrection;
+
+          const heroAzimuth = Math.PI * 0.25;
+          const heroElevation = Math.sin((23 * Math.PI) / 180);
+          const heroGroundDist = heroDist * Math.cos((23 * Math.PI) / 180);
+
+          const targetY = bounds.center.y * 0.85 + 0.38;
+          targetLookAtRef.current.set(bounds.center.x, targetY, bounds.center.z);
+
+          if (cameraPreset === 'hero') {
+            targetCamPosRef.current.set(
+              heroGroundDist * Math.sin(heroAzimuth),
+              targetY + heroDist * heroElevation,
+              heroGroundDist * Math.cos(heroAzimuth)
+            );
+          }
         }
       }
     };
 
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        handleResize();
+      });
+      resizeObserver.observe(container);
+    }
     window.addEventListener('resize', handleResize);
 
     return () => {
+      // Signal any in-flight async operations (GLB load) to discard their results
+      disposed.current = true;
+
       cancelAnimationFrame(animationFrameId);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       window.removeEventListener('resize', handleResize);
-      renderer.dispose();
+      canvasElement.removeEventListener('webglcontextlost', handleContextLost);
+      canvasElement.removeEventListener('webglcontextrestored', handleContextRestored);
       controls.dispose();
+
+      // Clear model ref so livery/wireframe effects don't traverse a disposed scene
+      carModelRef.current = null;
+      originalMaterialsRef.current.clear();
+
+      // Deep dispose scene objects safely
+      scene.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const mesh = obj as THREE.Mesh;
+          if (mesh.geometry) {
+            mesh.geometry.dispose();
+          }
+        }
+      });
+
+      if (scene.environment) {
+        scene.environment.dispose();
+      }
+
+      // Dispose renderer resources cleanly without forceContextLoss() destroying GPU context on remounts
+      renderer.dispose();
+
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, []);
+  }, [retryCount]);
 
   // Update Livery Colors on Genuine Car Materials
   useEffect(() => {
@@ -631,28 +855,54 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
       return;
     }
 
+    const bounds = modelBoundsRef.current;
+    const baseRadius = bounds ? bounds.radius : 3.2;
+    const center = bounds ? bounds.center : new THREE.Vector3(0, 0.38, 0.18);
+    const w = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const h = typeof window !== 'undefined' ? window.innerHeight : 800;
+    const aspectCorrection = w < h ? Math.max(1.0, (h / w) * 0.75) : 1.0;
+    const safeHeroDist = baseRadius * 1.95 * distMult * aspectCorrection;
+
     switch (cameraPreset) {
-      case 'hero':
-        // Balanced Front Three-Quarter (approx 25-30% larger, prominent and uncropped)
-        targetCamPosRef.current.set(2.85 * distMult, 1.25 * distMult, 2.70 * distMult);
-        targetLookAtRef.current.set(0, 0.38, 0.18);
+      case 'hero': {
+        const heroAzimuth = Math.PI * 0.25;
+        const heroElevation = Math.sin((23 * Math.PI) / 180);
+        const heroGroundDist = safeHeroDist * Math.cos((23 * Math.PI) / 180);
+        const targetY = center.y * 0.85 + 0.38;
+        targetLookAtRef.current.set(center.x, targetY, center.z);
+        targetCamPosRef.current.set(
+          heroGroundDist * Math.sin(heroAzimuth),
+          targetY + safeHeroDist * heroElevation,
+          heroGroundDist * Math.cos(heroAzimuth)
+        );
         break;
+      }
       case 'cockpit':
-        targetCamPosRef.current.set(0, 0.92, 0.40);
+        targetCamPosRef.current.set(0, 0.95, 0.42);
         targetLookAtRef.current.set(0, 0.55, 2.8);
         break;
-      case 'side':
-        targetCamPosRef.current.set(4.6 * distMult, 0.65, 0.15);
-        targetLookAtRef.current.set(0, 0.38, 0.15);
+      case 'side': {
+        const sideDist = baseRadius * 1.65 * distMult * aspectCorrection;
+        targetCamPosRef.current.set(sideDist, center.y + 0.2, center.z);
+        targetLookAtRef.current.set(center.x, center.y, center.z);
         break;
-      case 'top':
-        targetCamPosRef.current.set(0.01, 5.6 * distMult, 0.15);
-        targetLookAtRef.current.set(0, 0, 0.15);
+      }
+      case 'top': {
+        const topDist = baseRadius * 1.95 * distMult * aspectCorrection;
+        targetCamPosRef.current.set(0.01, topDist, center.z);
+        targetLookAtRef.current.set(center.x, center.y, center.z);
         break;
-      case 'rear':
-        targetCamPosRef.current.set(-2.0 * distMult, 1.15, -3.4 * distMult);
-        targetLookAtRef.current.set(0, 0.45, -0.8);
+      }
+      case 'rear': {
+        const rearDist = baseRadius * 1.65 * distMult * aspectCorrection;
+        targetCamPosRef.current.set(
+          -rearDist * 0.45,
+          center.y + 0.85,
+          -rearDist * 0.9
+        );
+        targetLookAtRef.current.set(center.x, center.y + 0.15, center.z - 0.4);
         break;
+      }
     }
   }, [cameraPreset, activeHotspot]);
 
@@ -682,45 +932,109 @@ export const F1Canvas: React.FC<F1CanvasProps> = ({
         </div>
       )}
 
-      {/* Error Notice */}
+      {/* Viewport Scoped Error / Fallback UI */}
       {loadError && (
-        <div className="absolute inset-0 bg-[#07080a]/95 flex flex-col items-center justify-center z-30 p-6 text-center">
-          <div className="text-red-500 font-chakra text-xl font-bold mb-3 flex items-center gap-2">
-            <span>MODEL NOT FOUND / LOAD ERROR</span>
+        <div className="absolute inset-0 bg-[#07080a]/90 backdrop-blur-md flex flex-col items-center justify-center z-30 p-6 text-center select-none">
+          {/* Subtle F1 Wireframe / Aero Vector Graphic */}
+          <div className="relative w-72 sm:w-96 h-36 sm:h-44 mb-4 flex items-center justify-center opacity-80">
+            <svg viewBox="0 0 400 160" className="w-full h-full stroke-[#66ff00] fill-none" strokeWidth="1.5">
+              {/* Ground & Aerodynamic Flow lines */}
+              <path d="M 10 140 L 390 140" stroke="rgba(255,255,255,0.1)" strokeDasharray="4 4" />
+              <path d="M 30 110 Q 120 70 200 95 T 370 70" stroke="rgba(102,255,0,0.3)" strokeWidth="1" strokeDasharray="3 3" />
+              <path d="M 20 125 Q 110 85 220 110 T 380 90" stroke="rgba(102,255,0,0.2)" strokeWidth="1" />
+              {/* Formula 1 Car Technical Silhouette */}
+              {/* Front Wing */}
+              <path d="M 40 128 L 75 128 L 78 116 L 45 116 Z" className="fill-[#66ff00]/10" />
+              {/* Front Wheel */}
+              <rect x="70" y="98" width="28" height="34" rx="4" className="stroke-[#66ff00] fill-black/60" />
+              {/* Nosecone & Cockpit */}
+              <path d="M 78 120 L 140 115 L 175 92 L 230 92 L 255 102 L 315 106 L 315 128 L 100 128" />
+              {/* Halo & Helmet */}
+              <path d="M 180 92 Q 200 78 215 92" strokeWidth="2" />
+              <circle cx="198" cy="86" r="6" className="fill-[#66ff00]/40" />
+              {/* Sidepod & Engine Cover */}
+              <path d="M 160 115 L 245 105 L 295 90 L 315 112" />
+              <path d="M 225 80 L 290 80 L 290 102" />
+              {/* Rear Wheel */}
+              <rect x="295" y="94" width="32" height="38" rx="4" className="stroke-[#66ff00] fill-black/60" />
+              {/* Rear Wing & Endplate */}
+              <path d="M 325 82 L 360 82 L 360 120 L 335 120" />
+              <path d="M 330 88 L 358 88" strokeWidth="2" />
+              <path d="M 330 96 L 358 96" strokeWidth="1.5" />
+            </svg>
+            <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/60 border border-amber-500/40 text-[9px] font-mono-tech text-amber-400">
+              FALLBACK SCHEMATIC
+            </div>
           </div>
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 max-w-lg text-left font-mono-tech text-xs text-gray-300 mb-4 leading-relaxed">
-            <p className="mb-2 font-bold text-white">Expected model destination:</p>
-            <code className="text-[#66ff00] bg-black/60 px-2 py-1 rounded block mb-3 border border-white/10">
-              public/models/f1-car.glb
-            </code>
-            <p className="text-gray-400">{loadError}</p>
+
+          <div className="text-amber-400 font-chakra text-lg sm:text-xl font-bold mb-2 flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+            <span>{loadError.includes('WebGL') ? 'WEBGL HARDWARE ACCELERATION OFFLINE' : '3D ASSET STREAM DELAYED'}</span>
           </div>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-mono-tech border border-white/20 transition-colors"
-          >
-            Retry Loading
-          </button>
+
+          <div className="bg-black/70 border border-amber-500/30 rounded-xl p-3 sm:p-4 max-w-md text-left font-mono-tech text-xs text-gray-300 mb-4 shadow-xl">
+            <p className="text-gray-300 mb-1.5 leading-relaxed">{loadError}</p>
+            <p className="text-[11px] text-[#66ff00]/80">
+              ✓ Telemetry HUD, Pit Strategy Calculator, Audio Player, and Technical Specifications below remain 100% operational.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            {retryCount < 2 ? (
+              <button
+                onClick={() => {
+                  // Only clear UI state here. The effect cleanup (return fn) manages
+                  // disposed.current and renderer disposal when retryCount changes.
+                  setLoadError(null);
+                  setIsLoading(true);
+                  setRetryCount((prev) => prev + 1);
+                }}
+                className="px-4 py-2 bg-[#66ff00] hover:bg-[#58dc00] text-black font-chakra font-black rounded-lg text-xs tracking-wider uppercase transition-colors cursor-pointer shadow-[0_0_14px_rgba(102,255,0,0.4)]"
+              >
+                Retry 3D Engine
+              </button>
+            ) : (
+              <div className="px-4 py-2 bg-white/5 border border-amber-500/30 text-amber-400 font-mono-tech rounded-lg text-[10px] text-center max-w-xs leading-relaxed">
+                WebGL context could not be established after retry.
+                <br />
+                Check <strong>chrome://settings/system</strong> or enable hardware acceleration, then reload the page.
+              </div>
+            )}
+            <a
+              href="#pit-strategy"
+              onClick={(e) => {
+                e.preventDefault();
+                const target = document.getElementById('pit-strategy');
+                if (target) {
+                  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  window.history.pushState(null, '', '#pit-strategy');
+                }
+              }}
+              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-chakra font-bold tracking-wider uppercase border border-white/20 transition-colors cursor-pointer"
+            >
+              View Pit Strategy
+            </a>
+          </div>
         </div>
       )}
 
       {/* Viewport Info & Interaction Legend */}
       {!isLoading && !loadError && (
-        <div className="absolute top-4 left-4 z-20 flex flex-col gap-1.5 pointer-events-none">
-          <div className="bg-black/70 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-md text-xs font-mono-tech text-gray-300 flex items-center gap-2 pointer-events-auto">
-            <span className="w-2 h-2 rounded-full bg-[#66ff00] inline-block" />
-            <span>ORBIT: L-DRAG</span>
-            <span className="text-gray-500">|</span>
-            <span>ZOOM: SCROLL / PINCH</span>
-            <span className="text-gray-500">|</span>
+        <div className="absolute top-[82px] sm:top-[92px] md:top-[98px] left-3 sm:left-4 z-20 flex flex-col items-start gap-1.5 pointer-events-none max-w-[calc(100vw-2rem)]">
+          <div className="bg-black/75 backdrop-blur-md border border-white/10 px-2.5 py-1.5 rounded-lg text-[10px] sm:text-xs font-mono-tech text-gray-300 flex flex-wrap items-center gap-1.5 sm:gap-2 pointer-events-auto shadow-lg">
+            <span className="w-2 h-2 rounded-full bg-[#66ff00] inline-block shrink-0" />
+            <span className="font-semibold text-white">ORBIT: L-DRAG</span>
+            <span className="text-gray-600">|</span>
+            <span>ZOOM: SCROLL</span>
+            <span className="text-gray-600">|</span>
             <span>PAN: R-DRAG</span>
           </div>
 
           {modelDetails && (
-            <div className="bg-black/60 backdrop-blur-md border border-white/10 px-2.5 py-1 rounded text-[10px] font-mono-tech text-gray-400 flex items-center gap-2">
-              <span className="text-emerald-400">GENUINE CAD MODEL LOADED</span>
+            <div className="bg-black/70 backdrop-blur-md border border-white/10 px-2.5 py-1 rounded-md text-[9px] sm:text-[10px] font-mono-tech text-gray-400 flex items-center gap-1.5 pointer-events-auto shadow-md">
+              <span className="text-emerald-400 font-semibold">CAD PIPELINE ACTIVE</span>
               <span className="text-gray-600">•</span>
-              <span>{modelDetails}</span>
+              <span className="truncate">{modelDetails}</span>
             </div>
           )}
         </div>
